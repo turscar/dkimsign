@@ -1,0 +1,11 @@
+version: 3
+
+tasks:
+  deploy:
+    desc: Deploy to pazu
+    env:
+      GOOS: linux
+      GOARCH: amd64
+    cmds:
+      - go build -o dkimsign-linux-amd64
+      - rsync -avz dkimsign-linux-amd64 pazu:dkimsign
