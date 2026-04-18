@@ -1,11 +1,23 @@
 version: 3
 
+vars:
+  Destination: pazu
+  Os: linux
+  Arch: amd64
+
 tasks:
   deploy:
-    desc: Deploy to pazu
+    desc: Deploy to {{ .Destination }}
     env:
       GOOS: linux
       GOARCH: amd64
     cmds:
-      - go build -o dkimsign-linux-amd64
-      - rsync -avz dkimsign-linux-amd64 pazu:dkimsign
+      - for: ["dkimsign", "dkim-verify", "dkim-keygen"]
+        cmd: go build -C cmd/{{ .ITEM }} -o {{ .ITEM }}-{{ .Os }}-{{ .Arch }}
+      - for: ["dkimsign", "dkim-verify", "dkim-keygen"]
+        cmd: rsync -avz cmd/{{ .ITEM }}/{{ .ITEM }}-{{ .Os }}-{{ .Arch }} {{ .Destination }}:{{ .ITEM }}
+
+  release:
+    desc: Release to github
+    cmds:
+      - goreleaser release --clean

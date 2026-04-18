@@ -3,7 +3,9 @@ package main
 import (
 	"crypto"
 	"crypto/ed25519"
+	"crypto/rsa"
 	"crypto/x509"
+	"encoding/base64"
 	"encoding/pem"
 	"fmt"
 	"io"
@@ -47,6 +49,7 @@ func main() {
 	var outFile string
 	var canonicalization string
 	var headers []string
+	var silent bool
 	flag.StringVar(&keyFile, "key", "", "Filename of private key")
 	flag.StringVar(&domain, "domain", "", "DKIM d= to sign")
 	flag.StringVar(&selector, "selector", "", "DKIM selector")
@@ -54,6 +57,7 @@ func main() {
 	flag.StringVar(&outFile, "out", "", "Write signed mail to file")
 	flag.StringVar(&canonicalization, "canon", "relaxed/simple", "Canonicalization method header/body")
 	flag.StringSliceVar(&headers, "headers", signHeaderKeys, "Headers to sign")
+	flag.BoolVar(&silent, "silent", false, "Silent mode")
 	flag.Parse()
 
 	if domain == "" {
@@ -131,7 +135,9 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	log.Println("Signed")
+	if !silent {
+		printPubKey(selector, domain, privateKey.Public())
+	}
 }
 
 func loadPrivateKey(path string) (crypto.Signer, error) {
@@ -174,4 +180,50 @@ func parseCanon(c string) dkim.Canonicalization {
 		log.Fatalf("unknown canonicalization format: '%v'", c)
 	}
 	return dkim.CanonicalizationSimple
+}
+
+func printPubKey(selector, domain string, pubKey crypto.PublicKey) {
+	var pubBytes []byte
+	var keyType string
+	const chunkSize = 200
+	switch pubKey := pubKey.(type) {
+	case *rsa.PublicKey:
+		// RFC 6376 is inconsistent about whether RSA public keys should
+		// be formatted as RSAPublicKey or SubjectPublicKeyInfo.
+		// Erratum 3017 (https://www.rfc-editor.org/errata/eid3017)
+		// proposes allowing both.  We use SubjectPublicKeyInfo for
+		// consistency with other implementations including opendkim,
+		// Gmail, and Fastmail.
+		var err error
+		pubBytes, err = x509.MarshalPKIXPublicKey(pubKey)
+		if err != nil {
+			log.Fatalf("Failed to marshal public key: %v", err)
+		}
+		keyType = "rsa"
+	case ed25519.PublicKey:
+		pubBytes = pubKey
+		keyType = "ed25519"
+	default:
+		panic("unreachable")
+	}
+
+	params := []string{
+		"v=DKIM1",
+		"k=" + keyType,
+		"p=" + base64.StdEncoding.EncodeToString(pubBytes),
+	}
+
+	var builder strings.Builder
+	_, _ = fmt.Fprintf(&builder, "%s._domainkey.%s 3600 IN TXT", selector, domain)
+
+	record := strings.Join(params, "; ")
+	for len(record) > chunkSize {
+		_, _ = fmt.Fprintf(&builder, " %q", record[:chunkSize])
+		record = record[chunkSize:]
+	}
+	if len(record) > 0 {
+		_, _ = fmt.Fprintf(&builder, " %q", record)
+	}
+
+	_, _ = fmt.Fprintln(os.Stderr, builder.String())
 }

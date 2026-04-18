@@ -35,3 +35,9 @@ go.work.sum
 /.idea/
 # Added by goreleaser init:
 dist/
+/cmd/dkim-keygen/dkim-keygen
+/cmd/dkim-verify/dkim-verify
+/cmd/dkimsign/dkimsign
+/cmd/dkimsign/dkimsign-linux-amd64
+/cmd/dkim-keygen/dkim-keygen-linux-amd64
+/cmd/dkim-verify/dkim-verify-linux-amd64
